@@ -1,0 +1,41 @@
+name: Train and Upload Sentiment Model
+
+on:
+  push:
+    branches:
+      - main  # Run workflow when pushing to the main branch
+  schedule:
+    - cron: "0 0 * * 1"  # Run every Monday at midnight UTC
+
+jobs:
+  train-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Set Up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.9"
+
+    - name: Install Dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Authenticate with Google Cloud
+      env:
+        GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+      run: |
+        echo "$GCP_CREDENTIALS" > gcp-key.json
+        export GOOGLE_APPLICATION_CREDENTIALS=gcp-key.json
+
+    - name: Train and Upload Model
+      run: python train_and_upload.py
+
+    - name: Upload Model as an Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: trained-model
+        path: models/
