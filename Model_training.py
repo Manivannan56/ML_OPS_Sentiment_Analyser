@@ -1,76 +1,55 @@
+import mlflow
+import mlflow.sklearn
 import pandas as pd
-import logging
 import joblib
-import os
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("naive_bayes_training.log"), logging.StreamHandler()]
-)
-logging.info("Starting Sentiment Analysis Training with Naïve Bayes...")
-# Convert star ratings to sentiment labels
-df = pd.read_csv("Data/Data.csv")
-MODEL_DIR = "models"  # Local model folder
-MODEL_FILE = os.path.join(MODEL_DIR, "naive_bayes_sentiment.pkl")
-VECTORIZER_FILE = os.path.join(MODEL_DIR, "tfidf_vectorizer.pkl")
+# Load Dataset
+df = pd.read_csv("Data/amazon_reviews.csv")
 
+# Convert star ratings into sentiment labels
 def map_sentiment(rating):
-    if rating <= 2:
-        return "Negative"
-    elif rating == 3:
-        return "Neutral"
-    else:
-        return "Positive"
+    return "Negative" if rating <= 2 else "Neutral" if rating == 3 else "Positive"
 
 df["label"] = df["star_rating"].apply(map_sentiment)
 
-# Drop missing values and ensure text is a string
-df = df.dropna(subset=["review_body"])
-df["review_body"] = df["review_body"].astype(str)
+# Prepare Data
+X = df["review_body"].astype(str)
+y = df["label"].map({"Negative": 0, "Neutral": 1, "Positive": 2})
 
-# Label encoding (convert sentiment to numbers)
-label_mapping = {"Negative": 0, "Neutral": 1, "Positive": 2}
-df["label"] = df["label"].map(label_mapping)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+# Vectorization
+vectorizer = CountVectorizer()
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
 
-logging.info("Balancing dataset...")
-positive = df[df["label"] == 2]
-negative = df[df["label"] == 0]
-neutral = df[df["label"] == 1]
+# Initialize MLflow
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+mlflow.set_experiment("Sentiment Analysis")
 
-negative_upsampled = negative.sample(len(positive), replace=True, random_state=42)
-neutral_upsampled = neutral.sample(len(positive), replace=True, random_state=42)
+with mlflow.start_run():
+    # Model Training
+    model = MultinomialNB()
+    model.fit(X_train_vec, y_train)
 
-balanced_df = pd.concat([positive, negative_upsampled, neutral_upsampled])
-balanced_df = balanced_df.sample(frac=1, random_state=42).reset_index(drop=True)
-logging.info(f"Dataset Balanced: {balanced_df['label'].value_counts().to_dict()}")
+    # Predictions
+    y_pred = model.predict(X_test_vec)
+    accuracy = accuracy_score(y_test, y_pred)
 
-# ======================= SPLIT DATA =======================
-X_train, X_test, y_train, y_test = train_test_split(
-    balanced_df["review_body"], balanced_df["label"], test_size=0.2, random_state=42
-)
-logging.info(f"Training Samples: {len(X_train)}, Test Samples: {len(X_test)}")
+    # Log Metrics
+    mlflow.log_param("model_type", "Naive Bayes")
+    mlflow.log_metric("accuracy", accuracy)
 
+    # Save Model & Vectorizer
+    joblib.dump(model, "models/naive_bayes_sentiment.pkl")
+    joblib.dump(vectorizer, "models/vectorizer.pkl")
 
-vectorizer = TfidfVectorizer(max_features=5000, stop_words="english")
-X_train_tfidf = vectorizer.fit_transform(X_train)
-X_test_tfidf = vectorizer.transform(X_test)
+    # Log Artifacts
+    mlflow.log_artifact("models/naive_bayes_sentiment.pkl")
+    mlflow.log_artifact("models/vectorizer.pkl")
 
-model = MultinomialNB()
-logging.info("Training Naïve Bayes model...")
-model.fit(X_train_tfidf, y_train)
-
-
-logging.info("Evaluating model...")
-y_pred = model.predict(X_test_tfidf)
-accuracy = accuracy_score(y_test, y_pred)
-
-joblib.dump(model, MODEL_FILE)
-joblib.dump(vectorizer, VECTORIZER_FILE)
-logging.info(f" Model saved at {MODEL_FILE}")
-logging.info(f" Vectorizer saved at {VECTORIZER_FILE}")
+print(f"Model trained and logged to MLflow with accuracy: {accuracy:.4f}")

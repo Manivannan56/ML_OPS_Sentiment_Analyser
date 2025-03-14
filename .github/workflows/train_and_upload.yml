@@ -1,4 +1,4 @@
-name: Train and Upload Sentiment Model
+name: Train, Track with MLflow, and Upload Sentiment Model
 
 on:
   push:
@@ -32,7 +32,14 @@ jobs:
         gcloud auth activate-service-account --key-file=gcp-key.json
         gcloud auth list  # Verify authentication
 
-    - name: Train the Model and Save
+    - name: Set Up MLflow Tracking
+      run: |
+        export MLFLOW_TRACKING_URI="http://127.0.0.1:5000"
+        mlflow server --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000 &
+
+    - name: Train the Model and Log with MLflow
+      env:
+        MLFLOW_TRACKING_URI: http://127.0.0.1:5000
       run: python Model_training.py  # Runs your training script
 
     - name: Upload Model to GCP
@@ -45,3 +52,9 @@ jobs:
       with:
         name: trained-model
         path: models/
+
+    - name: Upload MLflow Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: mlflow-logs
+        path: mlruns/
