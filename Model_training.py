@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
 # Load Dataset
-df = pd.read_csv("Data/amazon_reviews.csv")
+df = pd.read_csv("Data/Data.csv")
 
 # Convert star ratings into sentiment labels
 def map_sentiment(rating):
